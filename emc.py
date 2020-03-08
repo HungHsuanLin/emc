@@ -254,7 +254,7 @@ def generate_kpoints(kpt_frac, st, h, prg, basis):
     kpt_rec = MAT_m_VEC(T(basis_r), kpt_frac)
     print '-> generate_kpoints: K-point in reciprocal coordinates: %5.3f %5.3f %5.3f' % (kpt_rec[0], kpt_rec[1], kpt_rec[2])
     #
-    if prg == 'V' or prg == 'P':
+    if prg == 'V' or prg == 'P' or prg == 'Q':
         h = h*(1/Bohr) # [1/A]
     #
     kpoints = []
@@ -330,38 +330,32 @@ def parse_EIGENVAL_VASP(eigenval_fh, band, diff2_size, debug=False):
 def parse_nscf_PWSCF(eigenval_fh, band, diff2_size, debug=False):
     ev2h = 1.0/27.21138505
     eigenval_fh.seek(0) # just in case
-    engrs_at_k = []
     energies = []
     #
-    while True:
-        line = eigenval_fh.readline()
-        if not line:
-            break
-        #
-        if "End of band structure calculation" in line:
-            for i in range(diff2_size):
-                #
-                while True:
-                    line = eigenval_fh.readline()
-                    if "occupation numbers" in line:
-                        break
-                    #
-                    if "k =" in line:
-                        a = [] # energies at a k-point
-                        eigenval_fh.readline() # empty line
-                        #
-                        while True:
-                            line = eigenval_fh.readline()
-                            if line.strip() == "": # empty line
-                                break
-                            #
-                            a.extend(line.strip().split())
-                        #
-                        #print a
-                        assert len(a) <= band, 'Length of the energies array at a k-point is smaller than band param'
-                        energies.append(float(a[band-1])*ev2h)
-    #
-    #print engrs_at_k
+    kpoints_lst = []
+    energy_lst = []
+    k_counter = 0
+    for li in eigenval_fh:
+        if "number of electrons       =" in li:
+			elec_lst = re.findall("[-+]?\d+[\.]?\d*", li)
+			nelec = float(elec_lst[0])
+        if "number of Kohn-Sham states=" in li:
+            nbnd_lst = re.findall("[-+]?\d+[\.]?\d*", li)
+            nbnd  = int(nbnd_lst[0])
+        if " k =" in li:
+			k_counter += 1
+			tmp_lst = re.findall("[-+]?\d+[\.]?\d*", li)
+			kpoints_lst = kpoints_lst + tmp_lst[0:3]
+			li = next(eigenval_fh)
+			li = next(eigenval_fh)
+			while li.split() != []:
+				temp = re.findall("[-+]?\d+[\.]?\d*", li)
+				energy_lst = energy_lst + temp
+				li = next(eigenval_fh)
+    ### Convert energy list to a nkxnbands float matrix
+    energy_lst = [float(i) for i in energy_lst]
+    for i in range(k_counter):
+        energies.append(float(energy_lst[i*nbnd+band-1]*ev2h)) 
     return energies
 #
 def parse_inpcar(inpcar_fh, debug=False):
@@ -412,7 +406,7 @@ def parse_inpcar(inpcar_fh, debug=False):
         if p:
             basis.append([float(p.group(1)), float(p.group(2)), float(p.group(3))])
 
-    if debug: 
+    if debug:
         print "Real space basis:"
         for i in range(len(basis)):
             print '%9.7f %9.7f %9.7f' % (basis[i][0], basis[i][1], basis[i][2])
